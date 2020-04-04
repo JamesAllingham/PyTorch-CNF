@@ -133,3 +133,6 @@ dmypy.json
 *.JPG
 *.jpeg
 *.JPEG
+
+# saved models
+*.pt
