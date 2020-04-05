@@ -31,6 +31,8 @@ parser.add_argument('--hidden_dim', type=int, help='Size of the CNF hidden dim. 
                     default=32)
 parser.add_argument('--width', type=int, help='Size of the CNF width. (default: 64)',
                     default=64)
+parser.add_argument('--train', help='Train rather than load the best model.',
+                    default=False, action="store_true")
 
 args = parser.parse_args()
 
@@ -50,9 +52,9 @@ def calc_loss(odefunc, x, logp_diff_t1, t0, t1, energy_fun):
     )
 
     z_t0, logp_diff_t0 = z_t[-1], logp_diff_t[-1]
-    
+
     logp_x = -energy_fun(z_t0).view(-1) - logp_diff_t0.view(-1)
-    
+
     loss = -logp_x.mean(0)
 
     return loss
@@ -84,56 +86,72 @@ def main():
         energy_fun = energy_function_2
     elif args.energy_fun == 3:
         energy_fun = energy_function_3
-    elif args.energy_fun == 3:
-        energy_fun = energy_function_3
+    elif args.energy_fun == 4:
+        energy_fun = energy_function_4
     else:
         raise Exception("Energy function not implemented.")
 
     # Train model
-    for itr in tqdm(range(10000 + 1)):
-        optimizer.zero_grad()
+    if args.train:
+        for itr in tqdm(range(1000 + 1)):
+            optimizer.zero_grad()
 
-        x = norm.sample([args.num_samples]).to(device)
-        logp_diff_t1 = torch.zeros(args.num_samples, 1).type(torch.float32).to(device)
+            x = norm.sample([args.num_samples]).to(device)
+            logp_diff_t1 = torch.zeros(args.num_samples, 1).type(torch.float32).to(device)
 
-        loss = calc_loss(odefunc, x, logp_diff_t1, t0, t1, energy_fun)
+            loss = calc_loss(odefunc, x, logp_diff_t1, t0, t1, energy_fun)
 
-        loss.backward()
-        optimizer.step()
+            loss.backward()
+            optimizer.step()
 
-        best_loss = np.inf
-        if itr % 100 == 0:
-            z_t, logp_diff_t = odeint(
-                odefunc,
-                (x_test, logp_diff_t1_test),
-                torch.tensor([t1, t0]).type(torch.float32).to(device),
-                atol=1e-5,
-                rtol=1e-5,
-                method='dopri5',
-            )
+            best_loss = np.inf
+            if itr % 100 == 0:
+                z_t, logp_diff_t = odeint(
+                    odefunc,
+                    (x_test, logp_diff_t1_test),
+                    torch.tensor([t1, t0]).type(torch.float32).to(device),
+                    atol=1e-5,
+                    rtol=1e-5,
+                    method='dopri5',
+                )
 
-            z_t0, logp_diff_t0 = z_t[-1], logp_diff_t[-1]
+                z_t0, logp_diff_t0 = z_t[-1], logp_diff_t[-1]
 
-            logp_x = energy_fun(z_t0).view(-1) - logp_diff_t0.view(-1)
-            loss = -logp_x.mean(0)
+                logp_x = energy_fun(z_t0).view(-1) - logp_diff_t0.view(-1)
+                loss = -logp_x.mean(0)
 
-            if loss < best_loss:
-                best_loss = loss
-                torch.save(odefunc.state_dict(),
-                           f"{save_dir}/best_model.pt")
+                if loss < best_loss:
+                    best_loss = loss
+                    torch.save(odefunc.state_dict(),
+                            f"{save_dir}/best_model.pt")
 
-            plt.figure(figsize=(4, 4), dpi=200)
-            plt.hist2d(*z_t0.detach().cpu().numpy().T,
-                       bins=300, density=True, range=[[-4, 4], [-4, 4]])
-            plt.axis('off')
-            plt.gca().invert_yaxis()
-            plt.margins(0, 0)
+                plt.figure(figsize=(4, 4), dpi=200)
+                plt.hist2d(*z_t0.detach().cpu().numpy().T,
+                        bins=300, density=True, range=[[-4, 4], [-4, 4]])
+                plt.axis('off')
+                plt.gca().invert_yaxis()
+                plt.margins(0, 0)
 
-            plt.savefig(save_dir + f"/tgt_itr_{itr:05d}.jpg",
-                        pad_inches=0, bbox_inches='tight')
-            plt.close()
+                plt.savefig(save_dir + f"/tgt_itr_{itr:05d}.jpg",
+                            pad_inches=0, bbox_inches='tight')
+                plt.close()
 
     odefunc.load_state_dict(torch.load(f"{save_dir}/best_model.pt"))
+
+    if not args.train:
+        z_t, logp_diff_t = odeint(
+            odefunc,
+            (x_test, logp_diff_t1_test),
+            torch.tensor([t1, t0]).type(torch.float32).to(device),
+            atol=1e-5,
+            rtol=1e-5,
+            method='dopri5',
+        )
+
+        z_t0, logp_diff_t0 = z_t[-1], logp_diff_t[-1]
+
+        logp_x = energy_fun(z_t0).view(-1) - logp_diff_t0.view(-1)
+        best_loss = -logp_x.mean(0)
 
     # Generate evolution of density
     x = np.linspace(-4, 4, 100)

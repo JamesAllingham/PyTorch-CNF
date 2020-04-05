@@ -30,6 +30,8 @@ parser.add_argument('--hidden_dim', type=int, help='Size of the CNF hidden dim. 
                     default=32)
 parser.add_argument('--width', type=int, help='Size of the CNF width. (default: 64)',
                     default=64)
+parser.add_argument('--train', help='Train rather than load the best model.',
+                    default=False, action="store_true")
 
 args = parser.parse_args()
 
