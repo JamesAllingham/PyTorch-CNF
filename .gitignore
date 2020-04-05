@@ -136,3 +136,7 @@ dmypy.json
 
 # saved models
 *.pt
+
+# hpc logs
+*.err
+*.out
