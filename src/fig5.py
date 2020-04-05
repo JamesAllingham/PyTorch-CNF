@@ -30,6 +30,8 @@ parser.add_argument('--hidden_dim', type=int, help='Size of the CNF hidden dim. 
                     default=32)
 parser.add_argument('--width', type=int, help='Size of the CNF width. (default: 64)',
                     default=64)
+parser.add_argument('--epochs', type=int, help='Number of training rounds. (default: 1000)',
+                    default=1000)
 parser.add_argument('--train', help='Train rather than load the best model.',
                     default=False, action="store_true")
 
@@ -99,7 +101,7 @@ def main():
     x_test, logp_diff_t1_test = get_batch(args.num_samples * 20, args.dataset)
 
     # Train model
-    for itr in tqdm(range(10000 + 1)):
+    for itr in tqdm(range(args.epochs + 1)):
         optimizer.zero_grad()
 
         x, logp_diff_t1 = get_batch(args.num_samples, args.dataset)
