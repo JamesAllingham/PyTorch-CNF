@@ -6,7 +6,6 @@ from tqdm import tqdm
 
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.datasets import make_moons, make_circles
 
 import torch
 import torch.optim as optim
@@ -29,10 +28,10 @@ parser.add_argument('--num_samples', type=int, help='Number of samples to draw p
                     default=512)
 parser.add_argument('--hidden_dim', type=int, help='Size of the CNF hidden dim. (default: 32)',
                     default=32)
-parser.add_argument('--width', type=int, help='Size of the CNF width. (default: 64)',
-                    default=64)
-parser.add_argument('--epochs', type=int, help='Number of training rounds. (default: 1000)',
-                    default=1000)
+parser.add_argument('--width', type=int, help='Size of the CNF width. (default: 32)',
+                    default=32)
+parser.add_argument('--epochs', type=int, help='Number of training rounds. (default: 10000)',
+                    default=10000)
 parser.add_argument('--train', help='Train rather than load the best model.',
                     default=False, action="store_true")
 
@@ -43,23 +42,22 @@ if args.GPU is not None:
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def calc_loss(odefunc, x, logp_diff_t1, t0, t1, energy_fun):
+
+def calc_loss(odefunc, z0, logp_z0, t0, t1, energy_fun):
     z_t, logp_diff_t = odeint(
         odefunc,
-        (x, logp_diff_t1),
-        torch.tensor([t1, t0]).type(torch.float32).to(device),
+        (z0, logp_z0),
+        torch.tensor([t0, t1]).type(torch.float32).to(device),
         atol=1e-5,
         rtol=1e-5,
         method='dopri5',
     )
 
-    z_t0, logp_diff_t0 = z_t[-1], logp_diff_t[-1]
+    x, logp_x = z_t[-1], logp_diff_t[-1]
 
-    logp_x = -energy_fun(z_t0).view(-1) - logp_diff_t0.view(-1)
+    KLD = logp_x.mean(0) + energy_fun(x).mean(0)
 
-    loss = -logp_x.mean(0)
-
-    return loss
+    return KLD
 
 
 def main():
@@ -79,8 +77,8 @@ def main():
 
     optimizer = optim.Adam(odefunc.parameters(), lr=1e-3, weight_decay=0.)
 
-    x_test = norm.sample([args.num_samples * 20]).to(device)
-    logp_diff_t1_test = torch.zeros(args.num_samples * 20, 1).type(torch.float32).to(device)
+    z0_test = norm.sample([args.num_samples * 20]).to(device)
+    logp_z0_test = norm.log_prob(z0_test).unsqueeze(dim=-1).to(device)
 
     if args.energy_fun == 1:
         energy_fun = energy_function_1
@@ -98,10 +96,10 @@ def main():
         for itr in tqdm(range(args.epochs + 1)):
             optimizer.zero_grad()
 
-            x = norm.sample([args.num_samples]).to(device)
-            logp_diff_t1 = torch.zeros(args.num_samples, 1).type(torch.float32).to(device)
+            z0 = norm.sample([args.num_samples]).to(device)
+            logp_z0 = norm.log_prob(z0).unsqueeze(dim=-1).to(device)
 
-            loss = calc_loss(odefunc, x, logp_diff_t1, t0, t1, energy_fun)
+            loss = calc_loss(odefunc, z0, logp_z0, t0, t1, energy_fun)
 
             loss.backward()
             optimizer.step()
@@ -110,17 +108,16 @@ def main():
             if itr % 100 == 0:
                 z_t, logp_diff_t = odeint(
                     odefunc,
-                    (x_test, logp_diff_t1_test),
-                    torch.tensor([t1, t0]).type(torch.float32).to(device),
+                    (z0_test, logp_z0_test),
+                    torch.tensor([t0, t1]).type(torch.float32).to(device),
                     atol=1e-5,
                     rtol=1e-5,
                     method='dopri5',
                 )
 
-                z_t0, logp_diff_t0 = z_t[-1], logp_diff_t[-1]
+                x, logp_x = z_t[-1], logp_diff_t[-1]
 
-                logp_x = energy_fun(z_t0).view(-1) - logp_diff_t0.view(-1)
-                loss = -logp_x.mean(0)
+                loss = (logp_x.mean(0) + energy_fun(x).mean(0)).item()
 
                 print(f"{itr} Test loss: {loss}")
 
@@ -129,9 +126,12 @@ def main():
                     torch.save(odefunc.state_dict(),
                             f"{save_dir}/best_model.pt")
 
+                torch.save(odefunc.state_dict(),
+                            f"{save_dir}/last_model.pt")
+
                 plt.figure(figsize=(4, 4), dpi=200)
-                plt.hist2d(*z_t0.detach().cpu().numpy().T,
-                        bins=300, density=True, range=[[-4, 4], [-4, 4]])
+                plt.hist2d(*x.detach().cpu().numpy().T,
+                           bins=300, density=True, range=[[-4, 4], [-4, 4]])
                 plt.axis('off')
                 plt.gca().invert_yaxis()
                 plt.margins(0, 0)
@@ -145,41 +145,40 @@ def main():
     if not args.train:
         z_t, logp_diff_t = odeint(
             odefunc,
-            (x_test, logp_diff_t1_test),
-            torch.tensor([t1, t0]).type(torch.float32).to(device),
+            (z0_test, logp_z0_test),
+            torch.tensor([t0, t1]).type(torch.float32).to(device),
             atol=1e-5,
             rtol=1e-5,
             method='dopri5',
         )
 
-        z_t0, logp_diff_t0 = z_t[-1], logp_diff_t[-1]
+        x, logp_x = z_t[-1], logp_diff_t[-1]
 
-        logp_x = energy_fun(z_t0).view(-1) - logp_diff_t0.view(-1)
-        best_loss = -logp_x.mean(0)
+        best_loss = (logp_x.mean(0) + energy_fun(x).mean(0)).item()
 
     # Generate evolution of density
-    x = np.linspace(-4, 4, 100)
-    y = np.linspace(-4, 4, 100)
+    x = np.linspace(-6, 6, 600)
+    y = np.linspace(-6, 6, 600)
     points = np.vstack(np.meshgrid(x, y)).reshape([2, -1]).T
 
-    z_t1 = torch.tensor(points).type(torch.float32).to(device)
-    logp_diff_t1 = torch.zeros(z_t1.shape[0], 1).type(torch.float32).to(device) 
+    z_t0 = torch.tensor(points).type(torch.float32).to(device)
+    logp_t0 = norm.log_prob(z_t0).unsqueeze(dim=-1).to(device)
 
-    z_t, logp_diff_t = odeint(
+    z_t, logp_t = odeint(
         odefunc,
-        (z_t1, logp_diff_t1),
+        (z_t0, logp_t0),
         torch.tensor(np.linspace(t0, t1, 21)).to(device),
         atol=1e-5,
         rtol=1e-5,
         method='dopri5',
     )
 
-    for (t, z, logp_diff) in zip(np.linspace(t0, t1, 21), z_t, logp_diff_t):
-        logp = norm.log_prob(z) - logp_diff.view(-1)
-
+    for (t, z, logp) in zip(np.linspace(t0, t1, 21), z_t, logp_t):
         plt.figure(figsize=(4, 4), dpi=200)
-        plt.tricontourf(*z_t1.detach().cpu().numpy().T,
-                        np.exp(logp.detach().cpu().numpy()), 200)
+        plt.tricontourf(*z.detach().cpu().numpy().T,
+                        np.exp(logp.view(-1).detach().cpu().numpy()), 200)
+        plt.xlim([-4, 4])
+        plt.ylim([-4, 4])
         plt.tight_layout()
         plt.axis('off')
         plt.gca().invert_yaxis()

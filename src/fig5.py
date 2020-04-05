@@ -30,8 +30,8 @@ parser.add_argument('--hidden_dim', type=int, help='Size of the CNF hidden dim. 
                     default=32)
 parser.add_argument('--width', type=int, help='Size of the CNF width. (default: 64)',
                     default=64)
-parser.add_argument('--epochs', type=int, help='Number of training rounds. (default: 1000)',
-                    default=1000)
+parser.add_argument('--epochs', type=int, help='Number of training rounds. (default: 10000)',
+                    default=10000)
 parser.add_argument('--train', help='Train rather than load the best model.',
                     default=False, action="store_true")
 
@@ -133,6 +133,9 @@ def main():
                 best_loss = loss
                 torch.save(odefunc.state_dict(),
                            f"{save_dir}/best_model.pt")
+
+            torch.save(odefunc.state_dict(),
+                           f"{save_dir}/last_model.pt")
 
             plt.figure(figsize=(4, 4), dpi=200)
             plt.hist2d(*z_t0.detach().cpu().numpy().T,
