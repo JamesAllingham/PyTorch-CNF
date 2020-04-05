@@ -126,6 +126,9 @@ def main():
 
             logp_x = p_z0.log_prob(z_t0).to(device) - logp_diff_t0.view(-1)
             loss = -logp_x.mean(0)
+
+            print(f"{itr} Test loss: {loss}")
+
             if loss < best_loss:
                 best_loss = loss
                 torch.save(odefunc.state_dict(),
