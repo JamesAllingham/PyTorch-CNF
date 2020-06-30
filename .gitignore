@@ -140,3 +140,6 @@ dmypy.json
 # hpc logs
 *.err
 *.out
+
+# code settings
+settings.json
