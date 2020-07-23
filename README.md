@@ -1,5 +1,5 @@
-# PyTorch-NODE
-Replication of the experimental results in [Neural Ordinary Differential Equations](https://arxiv.org/abs/1806.07366).
+# PyTorch-CNF
+Replication of the CNF results in [Neural Ordinary Differential Equations](https://arxiv.org/abs/1806.07366).
 
 ## Requirements
 
